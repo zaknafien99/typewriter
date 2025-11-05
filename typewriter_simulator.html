@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Typewriter Simulator</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Source+Code+Pro:wght@400;700&family=Inter:wght@400;600&display=swap" rel="stylesheet">
+    <style>
+        /* Custom font for the typewriter look */
+        #typewriter-text {
+            font-family: 'Source Code Pro', monospace;
+            /* Ensure text area inherits the font and looks like paper */
+            resize: none;
+            line-height: 1.5;
+            padding: 2rem;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1);
+            color: #1a202c; /* Dark text */
+        }
+        /* Style for the typing indicator (optional cursor effect) */
+        .typing-area:focus {
+            outline: none;
+            border-color: transparent;
+            box-shadow: none;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen flex items-center justify-center p-4" onclick="initAudio()">
+    <div class="w-full max-w-4xl bg-white rounded-xl shadow-2xl p-6">
+        <header class="text-center mb-6">
+            <h1 class="text-3xl font-bold text-gray-800 font-inter">The Vintage Typewriter</h1>
+            <p id="audio-status" class="text-sm text-red-500 font-inter mt-1 font-semibold">
+                Click anywhere on the screen to enable sound!
+            </p>
+        </header>
+
+        <textarea
+            id="typewriter-text"
+            rows="18"
+            placeholder="Start typing here and listen closely..."
+            class="typing-area w-full border-4 border-gray-300 rounded-lg text-lg bg-gray-50 transition duration-300 focus:border-indigo-500"
+        ></textarea>
+
+        <footer class="mt-6 text-center text-gray-500 text-sm font-inter">
+            <p>Built with Tone.js for synthesized mechanical sounds.</p>
+        </footer>
+    </div>
+
+    <script type="module">
+        // --- Firebase Globals (Standard Requirement, but not used for simulator logic) ---
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
+        // The __initial_auth_token global is available but not strictly needed for this non-database app.
+        // ---------------------------------------------------------------------------------
+
+        let audioInitialized = false;
+        let keySynth;
+        let returnSynth;
+        let bellSynth; 
+        const statusElement = document.getElementById('audio-status');
+        const textarea = document.getElementById('typewriter-text');
+        
+        // --- Audio Initialization ---
+        window.initAudio = function() {
+            if (audioInitialized) return;
+
+            // 1. Key Press Sound (Sharp, Classic Clack - Filtered Noise)
+            // Use a Highpass filter to keep only the sharp, high-frequency "clack"
+            const keyFilter = new Tone.Filter(3500, "highpass").toDestination(); 
+            keySynth = new Tone.NoiseSynth({
+                noise: { type: 'white' },
+                envelope: {
+                    attack: 0.001,
+                    decay: 0.05, // Very short decay for a sharp click
+                    sustain: 0.0,
+                    release: 0.01
+                }
+            }).connect(keyFilter);
+            keySynth.volume.value = -12; 
+
+            // 2. Carriage Return Sound (Metallic Zip/Slide - Filtered White Noise)
+            // Use a Bandpass filter focused on a higher frequency for a sharper, mechanical 'zip'
+            const returnFilter = new Tone.Filter(1500, "bandpass").toDestination();
+            returnSynth = new Tone.NoiseSynth({
+                noise: { type: 'white' }, // Using white noise for a sharp, metallic sound
+                envelope: {
+                    attack: 0.005, // Fast attack
+                    decay: 0.2,   // Short, sharp slide
+                    sustain: 0.0,
+                    release: 0.1
+                }
+            }).connect(returnFilter);
+            returnSynth.volume.value = -8; 
+
+            // 3. Bell Sound (Deep Ding - Tuned MetalSynth)
+            bellSynth = new Tone.MetalSynth({
+                frequency: 300, // Clear, classic bell frequency
+                envelope: {
+                    attack: 0.01,
+                    decay: 1.2, // Long resonance
+                    release: 0.5
+                },
+                harmonicity: 5.1,
+                modulationIndex: 10,
+                resonance: 3000, 
+                octaves: 1.5
+            }).toDestination();
+            bellSynth.volume.value = -10;
+
+            // Start Tone.js context (required for sound to work)
+            Tone.start().then(() => {
+                audioInitialized = true;
+                statusElement.textContent = "Sound enabled! Start typing.";
+                statusElement.classList.remove('text-red-500');
+                statusElement.classList.add('text-green-600');
+                console.log("Tone.js audio context started.");
+            }).catch(e => {
+                console.error("Failed to start Tone.js:", e);
+                statusElement.textContent = "Error enabling sound. Check console.";
+            });
+        }
+        
+        // --- Typing Logic ---
+        textarea.addEventListener('keydown', (event) => {
+            // Only proceed if audio is initialized
+            if (!audioInitialized) {
+                return;
+            }
+
+            const key = event.key;
+
+            if (key === 'Enter') {
+                // 1. Play Bell Sound (Ding) immediately
+                if (bellSynth) {
+                    // Use a slightly different note/frequency for the bell ding
+                    bellSynth.triggerAttackRelease("G4", 0.5, Tone.now()); 
+                }
+                
+                // 2. Play Carriage Return Sound (Metallic Zip/Slide) 50ms later
+                if (returnSynth) {
+                    returnSynth.triggerAttackRelease(0.15, Tone.now() + 0.06);
+                }
+            } else if (key.length === 1 && key !== ' ' && !event.ctrlKey && !event.altKey && !event.metaKey) {
+                // 3. Play Standard Key Press Sound (Classic Clack)
+                if (keySynth) {
+                    // Slight randomization of duration for an organic feel
+                    const duration = 0.04 + Math.random() * 0.02; 
+                    keySynth.triggerAttackRelease(duration);
+
+                    // Randomize volume for a more organic, older feel
+                    const randomVolume = -18 + Math.random() * 6; // between -18dB and -12dB
+                    keySynth.volume.value = randomVolume;
+                }
+            } else if (key === 'Backspace' || key === 'Delete') {
+                // 4. Play Key Press Sound for backspace/delete, slightly quieter
+                if (keySynth) {
+                    keySynth.volume.value = -25; // Quieter
+                    keySynth.triggerAttackRelease(0.05); // Fixed duration
+                    keySynth.volume.value = -12; // Reset base volume
+                }
+            }
+            // Spacebar and other non-character keys are currently silent, which is fine for realism.
+        });
+    </script>
+</body>
+</html>
